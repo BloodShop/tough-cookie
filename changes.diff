@@ -1,0 +1,185 @@
+diff --git a/lib/cookie.js b/lib/cookie.js
+index 32dc0f8..3e1bf4d 100644
+--- a/lib/cookie.js
++++ b/lib/cookie.js
+@@ -997,7 +997,7 @@ CookieJar.prototype.setCookie = function(cookie, url, options, cb) {
+   var context = getCookieContext(url);
+   if (options instanceof Function) {
+     cb = options;
+-    options = {};
++    options = Object.create(null);
+   }
+ 
+   var host = canonicalDomain(context.hostname);
+@@ -1132,7 +1132,7 @@ CookieJar.prototype.getCookies = function(url, options, cb) {
+   }
+ 
+   var now = options.now || Date.now();
+-  var expireCheck = options.expire !== false;
++  var expireCheck = options.expire !== false; // && !options.ignoreExpiration;
+   var allPaths = !!options.allPaths;
+   var store = this.store;
+ 
+diff --git a/lib/memstore.js b/lib/memstore.js
+index d2b915c..6b0a0b1 100644
+--- a/lib/memstore.js
++++ b/lib/memstore.js
+@@ -36,7 +36,7 @@ var util = require('util');
+ 
+ function MemoryCookieStore() {
+   Store.call(this);
+-  this.idx = {};
++  this.idx = Object.create(null);
+ }
+ util.inherits(MemoryCookieStore, Store);
+ exports.MemoryCookieStore = MemoryCookieStore;
+@@ -115,10 +115,10 @@ MemoryCookieStore.prototype.findCookies = function(domain, path, cb) {
+ 
+ MemoryCookieStore.prototype.putCookie = function(cookie, cb) {
+   if (!this.idx[cookie.domain]) {
+-    this.idx[cookie.domain] = {};
++    this.idx[cookie.domain] = Object.create(null);
+   }
+   if (!this.idx[cookie.domain][cookie.path]) {
+-    this.idx[cookie.domain][cookie.path] = {};
++    this.idx[cookie.domain][cookie.path] = Object.create(null);
+   }
+   this.idx[cookie.domain][cookie.path][cookie.key] = cookie;
+   cb(null);
+@@ -150,7 +150,7 @@ MemoryCookieStore.prototype.removeCookies = function(domain, path, cb) {
+ };
+ 
+ MemoryCookieStore.prototype.removeAllCookies = function(cb) {
+-  this.idx = {};
++  this.idx = Object.create(null);
+   return cb(null);
+ }
+ 
+diff --git a/package.json b/package.json
+index 8af9909..b67ccc9 100644
+--- a/package.json
++++ b/package.json
+@@ -59,7 +59,8 @@
+   "scripts": {
+     "version": "genversion lib/version.js && git add lib/version.js",
+     "test": "vows test/*_test.js",
+-    "cover": "nyc --reporter=lcov --reporter=html vows test/*_test.js"
++    "cover": "nyc --reporter=lcov --reporter=html vows test/*_test.js",
++    "pack-patched": "npm pack && powershell -Command \"Get-ChildItem *.tgz | Rename-Item -NewName { $_.BaseName + '-PATCHED.tgz' }\""
+   },
+   "engines": {
+     "node": ">=0.8"
+@@ -73,6 +74,7 @@
+   },
+   "dependencies": {
+     "psl": "^1.1.28",
+-    "punycode": "^2.1.1"
++    "punycode": "^2.1.1",
++    "tough-cookie": "file:tough-cookie-2.5.0-PATCHED.tgz"
+   }
+ }
+diff --git a/test/cookie_jar_test.js b/test/cookie_jar_test.js
+index 67809b9..26e454a 100644
+--- a/test/cookie_jar_test.js
++++ b/test/cookie_jar_test.js
+@@ -541,4 +541,65 @@ vows
+       }
+     }
+   })
++  .addBatch({
++    "Issue #282 - Prototype pollution": {
++      "when setting a cookie with the domain __proto__": {
++        topic: function() {
++          const jar = new tough.CookieJar(undefined, {
++            rejectPublicSuffixes: false
++          });
++          // try to pollute the prototype
++          jar.setCookieSync(
++            "Slonser=polluted; Domain=__proto__; Path=/notauth",
++            "https://__proto__/admin"
++          );
++          jar.setCookieSync(
++            "Auth=Lol; Domain=google.com; Path=/notauth",
++            "https://google.com/"
++          );
++          this.callback();
++        },
++        "results in a cookie that is not affected by the attempted prototype pollution": function() {
++          const pollutedObject = {};
++          assert(pollutedObject["/notauth"] === undefined);
++        }
++      },
++    },
++     "Issue #282 - Prototype pollution - V2.5.0 Patch": {
++      "when setting a cookie with the domain __proto__ and path keys": {
++        topic: function() {
++          var jar = new tough.CookieJar(undefined, {
++            rejectPublicSuffixes: false
++          });
++          var objectKeysFunctionRef = Object.keys;
++          // try to pollute the prototype
++          jar.setCookieSync(
++            "Slonser=polluted; Domain=__proto__; Path=keys",
++            "https://__proto__/admin"
++          );
++
++          return objectKeysFunctionRef;
++        },
++        "results in Object.keys() is not affected by the attempted prototype pollution": function(objectKeysFunctionRef) {
++          assert.strictEqual(objectKeysFunctionRef, Object.keys);
++        }
++      },
++      "When setting a cookie with the domain __proto__ and path __defineGetter__": {
++        topic: function() {
++          var jar = new tough.CookieJar(undefined, {
++            rejectPublicSuffixes: false
++          });
++          jar.setCookieSync(
++            "Slonser=polluted; Domain=__proto__; Path=__defineGetter__",
++            "https://__proto__/admin"
++          );
++          this.callback();
++        },
++        "results in Object.__defineGetter__() is not affected by the attempted prototype pollution": function() {
++          const pollutedObject = { "foo": "bar" };
++          assert(pollutedObject.foo === "bar");
++        }
++      }
++    }
++  })
+   .export(module);
+diff --git a/test/ietf_data/parser.json b/test/ietf_data/parser.json
+index c40ad54..9b6aab3 100644
+--- a/test/ietf_data/parser.json
++++ b/test/ietf_data/parser.json
+@@ -11,7 +11,7 @@
+   {
+     "test": "0002",
+     "received": [
+-      "foo=bar; Expires=Fri, 07 Aug 2019 08:04:19 GMT"
++      "foo=bar; Expires=Fri, 07 Aug 2026 08:04:19 GMT"
+     ],
+     "sent": [
+       { "name": "foo", "value": "bar" }
+@@ -707,7 +707,7 @@
+   {
+     "test": "COMMA0006",
+     "received": [
+-      "foo=bar; Expires=Fri, 07 Aug 2019 08:04:19 GMT"
++      "foo=bar; Expires=Fri, 07 Aug 2026 08:04:19 GMT"
+     ],
+     "sent": [
+       { "name": "foo", "value": "bar" }
+@@ -716,7 +716,7 @@
+   {
+     "test": "COMMA0007",
+     "received": [
+-      "foo=bar; Expires=Fri 07 Aug 2019 08:04:19 GMT, baz=qux"
++      "foo=bar; Expires=Fri 07 Aug 2026 08:04:19 GMT, baz=qux"
+     ],
+     "sent": [
+       { "name": "foo", "value": "bar" }
+diff --git a/tough-cookie-2.5.0-PATCHED.tgz b/tough-cookie-2.5.0-PATCHED.tgz
+deleted file mode 100644
+index 3b362bb..0000000
+Binary files a/tough-cookie-2.5.0-PATCHED.tgz and /dev/null differ

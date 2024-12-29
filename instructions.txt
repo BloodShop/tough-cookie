@@ -1,0 +1,32 @@
+Vulnerability occurs if you use CookieJar in rejectPublicSuffixes=false mode.
+You can do Prototype Pollution when pass Domain=__proto__
+
+Prevent prototype pollution in cookie memstore
+memstore.js file:
+Changed all occurrences of idx initializations from {} to Object.create(null) 
+
+parser.json file:
+Removed deprecated unit tests [0002, COMMA0006, COMMA0007]
+
+For tests check command `npm run test`
+
+After Implementing the Fix for the Vulnerability - run those commands:
+Before packing first run the index.js file:
+npm install tough-cookie@2.5.0 && node index.js
+
+After viewing the results you may pack the current tough-cookie-2.5.0 refactored by me:
+rm -rf node_modules
+npm run pack-patched
+npm install ./tough-cookie-2.5.0-PATCHED.tgz && node index.js
+
+command in order to pack:
+npm pack
+ORIGINAL_FILE=$(ls *.tgz) # Finds the generated .tgz file
+PATCHED_FILE=$(echo $ORIGINAL_FILE | sed 's/\.tgz$/-PATCHED.tgz/') # Appends "-PATCHED"
+mv "$ORIGINAL_FILE" "$PATCHED_FILE"
+echo "Packed file renamed to $PATCHED_FILE"
+
+or running script command:
+npm run pack-patched
+after adding this line to scripts section in package.json file:
+"pack-patched": "npm pack && mv $(ls *.tgz) $(ls *.tgz | sed 's/\\.tgz$/-PATCHED.tgz/')"
