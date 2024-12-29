@@ -1,3 +1,85 @@
+# Preventing Prototype Pollution in `tough-cookie`
+
+## Overview of the Vulnerability
+
+This vulnerability occurs when using `CookieJar` with `rejectPublicSuffixes=false`.  
+It allows **Prototype Pollution** by processing cookies with `Domain=__proto__`.
+
+### Fix Implemented
+
+#### Changes in `memstore.js`:
+- Replaced all occurrences of `idx` initializations from `{}` to `Object.create(null)` to mitigate prototype pollution.
+
+#### Changes in `parser.json`:
+- Refactored deprecated unit tests:
+  - `0002`
+  - `COMMA0006`
+  - `COMMA0007`
+
+---
+
+## How to Test and Verify the Fix
+
+### 1. Run Tests
+Execute the following command to run all tests:
+```bash
+npm run test
+```
+
+### 2. Before Packing
+Run the provided exploit code in `index.js` using the unpatched version of `tough-cookie`:
+```bash
+npm install tough-cookie@2.5.0 && node index.js
+```
+
+You should observe the vulnerability being exploited.
+
+### 3. Pack the Refactored Version
+
+#### Clean up the environment:
+```bash
+rm -rf node_modules
+```
+
+#### Use the included script to pack:
+Run the following command to pack the refactored version:
+```bash
+npm run pack-patched
+```
+
+Ensure this line is added to the `scripts` section in `package.json`:
+```json
+"pack-patched": "npm pack && mv $(ls *.tgz) $(ls *.tgz | sed 's/\\.tgz$/-PATCHED.tgz/')"
+```
+
+#### Alternatively, pack manually:
+```bash
+npm pack
+ORIGINAL_FILE=$(ls *.tgz) # Finds the generated .tgz file
+PATCHED_FILE=$(echo $ORIGINAL_FILE | sed 's/\\.tgz$/-PATCHED.tgz/') # Appends "-PATCHED"
+mv "$ORIGINAL_FILE" "$PATCHED_FILE"
+echo "Packed file renamed to $PATCHED_FILE"
+```
+
+### 4. Verify the Fix
+Install and test the patched version:
+```bash
+npm install ./tough-cookie-2.5.0-PATCHED.tgz && node index.js
+```
+
+If the fix is successful, the output will show:
+```
+EXPLOIT FAILED
+```
+
+---
+
+## Summary
+
+By following these steps, the prototype pollution vulnerability is mitigated.  
+The package is now secure and functions as intended, with the exploit code failing on the patched version.
+
+
 [RFC6265](https://tools.ietf.org/html/rfc6265) Cookies and CookieJar for Node.js
 
 [![npm package](https://nodei.co/npm/tough-cookie.png?downloads=true&downloadRank=true&stars=true)](https://nodei.co/npm/tough-cookie/)
